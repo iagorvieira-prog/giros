@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#101827">
+<title>Volante — teste de inclinação</title>
+<style>
+:root{color-scheme:dark;--bg:#101827;--panel:#192437;--muted:#a9b7ca;--blue:#5bbcff;--green:#51e0a3;--orange:#ffbe62}
+*{box-sizing:border-box}
+body{margin:0;padding:14px;background:var(--bg);color:#f5f8ff;font-family:system-ui,Arial,sans-serif}
+main{max-width:760px;margin:auto}
+h1{font-size:1.55rem;margin:4px 0}
+p{color:var(--muted);line-height:1.4}
+.panel{background:var(--panel);border:1px solid #34455e;border-radius:16px;padding:14px;margin-top:12px}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+button{border:0;border-radius:12px;padding:13px 16px;font-size:1rem;font-weight:700;background:var(--blue);color:#071423}
+button.secondary{background:#30435e;color:white}
+button:disabled{opacity:.55}
+.arena{position:relative;height:230px;overflow:hidden;border-radius:12px;background:linear-gradient(#15253a 0 65%,#263a50 65%);border:1px solid #3a506b;margin-top:12px}
+.horizon{position:absolute;top:65%;left:0;right:0;height:2px;background:#8297b0}
+.lane{position:absolute;top:65%;bottom:0;left:50%;width:3px;background:repeating-linear-gradient(to bottom,#fff 0 16px,transparent 16px 32px);opacity:.35}
+.boneco{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);width:48px;height:90px;transition:left .06s linear}
+.head{position:absolute;top:0;left:14px;width:20px;height:20px;border-radius:50%;background:#ffd0a6}
+.torso{position:absolute;top:23px;left:8px;width:32px;height:34px;border-radius:10px;background:#43a9f5;border:2px solid #c4eaff}
+.arm{position:absolute;top:26px;width:8px;height:30px;border-radius:8px;background:#ffd0a6}
+.al{left:2px;transform:rotate(15deg)}.ar{right:2px;transform:rotate(-15deg)}
+.leg{position:absolute;top:56px;width:11px;height:31px;border-radius:8px;background:#d8e4f3}.ll{left:12px}.lr{right:12px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.stat{background:#101a2a;border-radius:10px;padding:10px}.stat span{display:block;color:var(--muted);font-size:.78rem}.stat strong{font-size:1.1rem;font-variant-numeric:tabular-nums}
+.meter{height:12px;background:#0c1421;border-radius:99px;position:relative;margin-top:12px;overflow:hidden}
+.mcenter{position:absolute;left:50%;top:0;bottom:0;width:2px;background:#ffffff66}
+.mneedle{position:absolute;left:50%;top:0;bottom:0;width:7px;background:var(--green);border-radius:99px;transform:translateX(-50%)}
+.gasbar{height:12px;background:#0c1421;border-radius:99px;overflow:hidden;margin-top:7px}.gasfill{height:100%;width:0;background:var(--orange);transition:width .06s linear}
+small{color:var(--muted)}
+@media(orientation:landscape){body{padding:8px 18px}h1{font-size:1.25rem}.panel{padding:10px;margin-top:7px}.arena{height:32vh;min-height:130px;margin-top:8px}.stats{margin-top:6px}}
+</style>
+</head>
+<body>
+<main>
+<h1>Volante por inclinação</h1>
+<p style="margin:4px 0">Deixe o celular na horizontal. Incline para os lados para virar; incline a parte de cima para a frente para acelerar.</p>
+<section class="panel">
+<div class="row">
+<button id="enable">Ativar sensores</button>
+<button class="secondary" id="calibrate">Centralizar / calibrar</button>
+</div>
+<p id="status">Aguardando ativação. Abra por HTTPS e permita o sensor, se solicitado.</p>
+<div class="arena" id="arena">
+<div class="horizon"></div><div class="lane"></div>
+<div class="boneco" id="boneco"><div class="head"></div><div class="torso"></div><div class="arm al"></div><div class="arm ar"></div><div class="leg ll"></div><div class="leg lr"></div></div>
+</div>
+<div class="meter"><div class="mcenter"></div><div class="mneedle" id="needle"></div></div>
+<div class="stats">
+<div class="stat"><span>Direção</span><strong id="steerText">0.00</strong></div>
+<div class="stat"><span>Acelerador</span><strong id="gasText">0%</strong></div>
+<div class="stat"><span>Eixos usados</span><strong id="axesText">—</strong></div>
+</div>
+<div class="gasbar"><div class="gasfill" id="gasfill"></div></div>
+</section>
+<section class="panel">
+<div class="row"><label for="steerGain">Direção <span id="sg">1.0×</span></label><input id="steerGain" type="range" min=".5" max="2.5" step=".1" value="1">
+<label for="gasGain">Aceleração <span id="gg">1.0×</span></label><input id="gasGain" type="range" min=".5" max="2.5" step=".1" value="1"></div>
+<p><small>Use a calibração segurando o celular na posição normal de condução. O acelerador fica em zero quando o celular está neutro ou inclinado para trás.</small></p>
+</section>
+</main>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+let active=false, baseSteer=0, basePitch=0, rawSteer=0, rawPitch=0;
+let smoothSteer=0, smoothGas=0, gotData=false;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function getAxes(e){
+  // Em paisagem, beta normalmente representa inclinação lateral e gamma a inclinação frente/trás.
+  // Corrige o sinal para a orientação paisagem oposta.
+  const angle=(screen.orientation && typeof screen.orientation.angle==='number')
+    ? screen.orientation.angle : (window.orientation || 0);
+  let steerAxis, pitchAxis;
+  if (Math.abs(angle)===90) {
+    steerAxis = e.beta ?? 0;
+    pitchAxis = e.gamma ?? 0;
+    if (angle===270 || angle===-90) { steerAxis=-steerAxis; pitchAxis=-pitchAxis; }
+  } else {
+    // Fallback para testes em retrato; gire o celular para paisagem para uso previsto.
+    steerAxis = e.gamma ?? 0;
+    pitchAxis = e.beta ?? 0;
+  }
+  return {steerAxis,pitchAxis,angle};
+}
+function onOrientation(e){
+  if (e.beta==null || e.gamma==null) return;
+  const a=getAxes(e);
+  rawSteer=a.steerAxis;
+  rawPitch=a.pitchAxis;
+  gotData=true;
+  const steerGain=Number($('steerGain').value);
+  const gasGain=Number($('gasGain').value);
+  // Direção analógica com zona morta e suavização para reduzir tremores.
+  let s=clamp(((rawSteer-baseSteer)/25)*steerGain,-1,1);
+  if(Math.abs(s)<.06)s=0;
+  // Acelera apenas ao inclinar para a frente em relação ao centro calibrado.
+  const forward=rawPitch-basePitch;
+  let g=clamp((forward-4)/22*gasGain,0,1);
+  smoothSteer += (s-smoothSteer)*.22;
+  smoothGas += (g-smoothGas)*.18;
+  render(a);
+}
+function render(a){
+  const w=$('arena').clientWidth, margin=28;
+  const x=margin+((smoothSteer+1)/2)*(w-margin*2);
+  $('boneco').style.left=x+'px';
+  $('needle').style.left=(50+smoothSteer*46)+'%';
+  $('steerText').textContent=smoothSteer.toFixed(2);
+  $('gasText').textContent=Math.round(smoothGas*100)+'%';
+  $('gasfill').style.width=(smoothGas*100)+'%';
+  $('axesText').textContent=(Math.abs(a.angle)===90?'β / γ':'γ / β');
+  $('status').textContent='Sensor ativo · mantenha na horizontal';
+}
+async function enable(){
+ try{
+  if(!('DeviceOrientationEvent' in window)) throw new Error('Este navegador não oferece o sensor de orientação.');
+  if(typeof DeviceOrientationEvent.requestPermission==='function'){
+   const p=await DeviceOrientationEvent.requestPermission();
+   if(p!=='granted') throw new Error('Permissão negada.');
+  }
+  window.addEventListener('deviceorientation',onOrientation,true);
+  active=true; $('enable').disabled=true;
+  $('status').textContent='Sensor ativado. Aguarde os valores mudarem.';
+ }catch(err){$('status').textContent=err.message+' Use HTTPS e confira as permissões do navegador.'}
+}
+$('enable').addEventListener('click',enable);
+$('calibrate').addEventListener('click',()=>{
+ baseSteer=rawSteer;basePitch=rawPitch;smoothSteer=0;smoothGas=0;
+ $('status').textContent='Calibrado. Segure o celular na posição neutra.';
+});
+$('steerGain').addEventListener('input',()=> $('sg').textContent=Number($('steerGain').value).toFixed(1)+'×');
+$('gasGain').addEventListener('input',()=> $('gg').textContent=Number($('gasGain').value).toFixed(1)+'×');
+window.addEventListener('resize',()=>{if(gotData)render(getAxes({beta:rawSteer,gamma:rawPitch}))});
+})();
+</script>
+</body>
+</html>
