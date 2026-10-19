@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#101827">
+<title>Teste de Giroscópio — Volante</title>
+<style>
+  :root { color-scheme: dark; --bg:#101827; --panel:#192437; --muted:#a9b7ca; --blue:#5bbcff; --green:#51e0a3; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100dvh; padding:16px; background:radial-gradient(ellipse at top,#213653 0%,var(--bg) 65%); color:#f5f8ff; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { width:min(900px,100%); margin:0 auto; }
+  h1 { font-size:clamp(1.5rem,5vw,2.2rem); margin:4px 0 6px; }
+  p { color:var(--muted); line-height:1.45; }
+  .top { display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap; }
+  .pill { border:1px solid #3a506b; border-radius:99px; padding:7px 11px; color:var(--muted); font-size:.85rem; }
+  .panel { background:#192437eF; border:1px solid #34455e; border-radius:20px; padding:16px; margin-top:14px; box-shadow:0 12px 35px #0003; }
+  button { border:0; border-radius:13px; padding:13px 17px; font-size:1rem; font-weight:750; background:var(--blue); color:#071423; cursor:pointer; touch-action:manipulation; }
+  button.secondary { background:#30435e; color:white; }
+  button:disabled { opacity:.55; }
+  .arena { position:relative; height:min(48vh,370px); min-height:240px; overflow:hidden; border-radius:16px; border:1px solid #3a506b; background:linear-gradient(#14243a 0 68%,#263a50 68% 100%); }
+  .horizon { position:absolute; top:68%; left:0; right:0; height:2px; background:#8297b0; opacity:.45; }
+  .lane { position:absolute; top:68%; bottom:0; left:50%; width:3px; background:repeating-linear-gradient(to bottom,#e5eef9 0 18px,transparent 18px 36px); opacity:.35; transform:translateX(-50%); }
+  .lane.left { left:30%; opacity:.17; }
+  .lane.right { left:70%; opacity:.17; }
+  .target { position:absolute; bottom:9%; left:50%; transform:translateX(-50%); width:70px; height:112px; transition:left 80ms linear; display:flex; align-items:center; justify-content:center; }
+  .shadow { position:absolute; bottom:0; width:68px; height:14px; border-radius:50%; background:#0006; filter:blur(3px); }
+  .person { position:relative; width:58px; height:100px; filter:drop-shadow(0 5px 3px #0005); }
+  .head { position:absolute; top:0; left:19px; width:22px; height:22px; border-radius:50%; background:#ffd0a6; border:2px solid #fff4; }
+  .bodychar { position:absolute; top:24px; left:13px; width:34px; height:40px; border-radius:12px 12px 8px 8px; background:linear-gradient(135deg,#57c7ff,#3678ee); border:2px solid #c4eaff; }
+  .arm { position:absolute; top:28px; width:10px; height:35px; border-radius:8px; background:#ffd0a6; transform-origin:top center; }
+  .arm.l { left:7px; transform:rotate(18deg); } .arm.r { right:7px; transform:rotate(-18deg); }
+  .leg { position:absolute; top:61px; width:12px; height:34px; border-radius:7px; background:#d8e4f3; }
+  .leg.l { left:17px; transform:rotate(5deg); } .leg.r { right:17px; transform:rotate(-5deg); }
+  .stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
+  .stat { background:#101a2a; border-radius:12px; padding:10px; min-width:0; }
+  .stat span { display:block; color:var(--muted); font-size:.78rem; }
+  .stat strong { display:block; font-size:1.15rem; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .meter { height:12px; border-radius:99px; background:#0c1421; position:relative; overflow:hidden; margin:12px 0 4px; }
+  .meter .center { position:absolute; top:0; bottom:0; left:50%; width:2px; background:#f5f8ff66; }
+  .needle { position:absolute; top:0; bottom:0; left:50%; width:7px; border-radius:99px; background:var(--green); transform:translateX(-50%); transition:left 70ms linear; }
+  .hint { font-size:.9rem; }
+  .row { display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
+  label { color:var(--muted); font-size:.9rem; }
+  input[type=range] { width:150px; accent-color:var(--blue); vertical-align:middle; }
+  .warning { color:#ffd38a; }
+  @media (orientation:portrait) { .portrait-note { display:block; } }
+  @media (orientation:landscape) { .portrait-note { display:none; } body { padding:10px 18px; } .panel { margin-top:8px; padding:12px; } .arena { height:48vh; min-height:190px; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div><h1>Teste de Giroscópio</h1><p style="margin:0">Incline o celular deitado como se fosse um volante.</p></div>
+    <span class="pill" id="status">Sensor não iniciado</span>
+  </div>
+  <section class="panel">
+    <div class="row">
+      <button id="start">Ativar sensor</button>
+      <button id="recenter" class="secondary">Centralizar</button>
+      <button id="reset" class="secondary">Reiniciar teste</button>
+    </div>
+    <p class="hint portrait-note">Dica: gire o celular para a orientação paisagem (de lado) para testar como um volante.</p>
+    <div class="arena" id="arena" aria-label="Área de teste com personagem que se move lateralmente">
+      <div class="horizon"></div><div class="lane"></div><div class="lane left"></div><div class="lane right"></div>
+      <div class="target" id="target">
+        <div class="shadow"></div>
+        <div class="person" aria-label="Boneco">
+          <div class="head"></div><div class="bodychar"></div>
+          <div class="arm l"></div><div class="arm r"></div>
+          <div class="leg l"></div><div class="leg r"></div>
+        </div>
+      </div>
+    </div>
+    <div class="meter" aria-label="Indicador de direção"><div class="center"></div><div class="needle" id="needle"></div></div>
+    <div class="stats">
+      <div class="stat"><span>Inclinação X</span><strong id="xval">—</strong></div>
+      <div class="stat"><span>Inclinação Y</span><strong id="yval">—</strong></div>
+      <div class="stat"><span>Direção</span><strong id="direction">Centro</strong></div>
+    </div>
+    <p class="hint" id="help">Toque em “Ativar sensor”. Se o navegador pedir permissão, permita o acesso ao movimento.</p>
+  </section>
+  <section class="panel">
+    <div class="row">
+      <label for="sensitivity">Sensibilidade <span id="sensText">1.0×</span></label>
+      <input id="sensitivity" type="range" min="0.4" max="2.5" step="0.1" value="1">
+      <label for="deadzone">Zona neutra <span id="deadText">0.08</span></label>
+      <input id="deadzone" type="range" min="0" max="0.3" step="0.01" value="0.08">
+    </div>
+    <p class="hint">Se o boneco andar na direção errada, vire o celular para o outro lado ou use o botão Centralizar com o aparelho na posição neutra.</p>
+  </section>
+</main>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const target = $('target'), needle = $('needle'), status = $('status');
+  let active = false, baseline = 0, current = 0, rawTilt = 0, lastEvent = 0;
+  let orientationMode = 'auto';
+
+  function readTilt(e) {
+    // Preferimos gamma: rotação lateral em graus; fallback para aceleração incluindo gravidade.
+    if (typeof e.gamma === 'number' && Number.isFinite(e.gamma)) {
+      rawTilt = e.gamma;
+      orientationMode = 'orientation';
+    } else if (e.accelerationIncludingGravity && Number.isFinite(e.accelerationIncludingGravity.x)) {
+      rawTilt = e.accelerationIncludingGravity.x * 8;
+      orientationMode = 'motion';
+    } else return;
+    lastEvent = Date.now();
+    update();
+  }
+
+  function update() {
+    const sensitivity = Number($('sensitivity').value);
+    const deadzone = Number($('deadzone').value);
+    let normalized = ((rawTilt - baseline) / 35) * sensitivity;
+    if (Math.abs(normalized) < deadzone) normalized = 0;
+    current = Math.max(-1, Math.min(1, normalized));
+    const arenaWidth = $('arena').clientWidth;
+    const margin = 42;
+    const x = margin + ((current + 1) / 2) * (arenaWidth - margin * 2);
+    target.style.left = x + 'px';
+    target.style.transform = 'translateX(-50%)';
+    needle.style.left = (50 + current * 46) + '%';
+    $('xval').textContent = rawTilt.toFixed(1) + '°';
+    $('yval').textContent = orientationMode === 'orientation' ? 'gamma' : '—';
+    $('direction').textContent = current < -0.12 ? 'Esquerda' : current > 0.12 ? 'Direita' : 'Centro';
+  }
+
+  async function start() {
+    try {
+      if (typeof DeviceOrientationEvent === 'undefined') {
+        throw new Error('Este navegador não disponibiliza o sensor de orientação.');
+      }
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        const permission = await DeviceOrientationEvent.requestPermission();
+        if (permission !== 'granted') throw new Error('Permissão do sensor negada.');
+      } else if (typeof DeviceMotionEvent !== 'undefined' &&
+                 typeof DeviceMotionEvent.requestPermission === 'function') {
+        const permission = await DeviceMotionEvent.requestPermission();
+        if (permission !== 'granted') throw new Error('Permissão do sensor negada.');
+      }
+      window.addEventListener('deviceorientation', readTilt, true);
+      window.addEventListener('devicemotion', readTilt, true);
+      active = true;
+      status.textContent = 'Aguardando movimento…';
+      status.style.color = '#51e0a3';
+      $('help').textContent = 'Mova o celular suavemente para a esquerda e para a direita.';
+      $('start').textContent = 'Sensor ativado';
+      $('start').disabled = true;
+      setTimeout(() => {
+        if (active && lastEvent && Date.now() - lastEvent < 1500) status.textContent = 'Sensor ativo';
+        else if (active) {
+          status.textContent = 'Sem dados do sensor';
+          $('help').textContent = 'O navegador não enviou dados. Tente Chrome no Android e abra a página por HTTPS.';
+        }
+      }, 1800);
+    } catch (err) {
+      status.textContent = 'Não foi possível ativar';
+      $('help').textContent = err.message + ' Abra por HTTPS e confira as permissões do navegador.';
+    }
+  }
+
+  $('start').addEventListener('click', start);
+  $('recenter').addEventListener('click', () => {
+    baseline = rawTilt;
+    current = 0;
+    update();
+    $('help').textContent = 'Centro calibrado. Mantenha o celular na posição de condução.';
+  });
+  $('reset').addEventListener('click', () => {
+    baseline = rawTilt;
+    $('sensitivity').value = '1';
+    $('deadzone').value = '0.08';
+    $('sensText').textContent = '1.0×';
+    $('deadText').textContent = '0.08';
+    update();
+  });
+  $('sensitivity').addEventListener('input', () => {
+    $('sensText').textContent = Number($('sensitivity').value).toFixed(1) + '×'; update();
+  });
+  $('deadzone').addEventListener('input', () => {
+    $('deadText').textContent = Number($('deadzone').value).toFixed(2); update();
+  });
+  window.addEventListener('resize', update);
+  // Mostrar orientação disponível antes de iniciar, se o navegador já enviar eventos.
+  window.addEventListener('deviceorientation', e => {
+    if (!active && typeof e.gamma === 'number') {
+      rawTilt = e.gamma;
+      $('xval').textContent = rawTilt.toFixed(1) + '°';
+    }
+  }, true);
+})();
+</script>
+</body>
+</html>
